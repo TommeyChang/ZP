@@ -9,7 +9,7 @@ from keras.models import Sequential
 from keras.models import Model
 from keras.layers.core import Dense, Dropout, Activation
 from keras.layers.recurrent import LSTM
-from keras.layers import Embedding
+from keras.layers import Embedding, Input
 from keras.preprocessing.text import Tokenizer
 
 class ZeroProDetection:
@@ -29,6 +29,7 @@ class ZeroProDetection:
         self.dataFileName = dataFileName
         
     def textPreprocess(self):
+        # Most codes of this function are learning from Francois
         self.logger.info('Fetch the dataset ...')
         textList = []
         labelList = []
@@ -40,6 +41,7 @@ class ZeroProDetection:
         fpDataFile.close()
         tokenizer = Tokenizer(filters='')
         tokenizer.fit_on_texts(textList)
+        self.word_index = tokenizer.word_index
         sequences = tokenizer.texts_to_sequences(textList)
         # ramdon the sentence matrix        
         indices = np.arange(sequences.shape[0])
@@ -54,28 +56,36 @@ class ZeroProDetection:
         self.testData = sequences[ -nbTest :]
         self.testLabels = labelList[ -nbTest : ]
         
-    def loadWord2Vec(self):
+    def loadWordVecs(self, vectFile, vectorDim):
+        # Most codes of this function are learning from Francois
         embeddings_index = {}
-        f = open(os.path.join(GLOVE_DIR, 'glove.6B.100d.txt'))
-        for line in f:
+        fpVecFile = open(vecFile)
+        for line in fpVecFile:
             values = line.split()
             word = values[0]
             coefs = np.asarray(values[1:], dtype='float32')
             embeddings_index[word] = coefs
-        f.close()
-        embedding_matrix = np.zeros((len(word_index) + 1, EMBEDDING_DIM))
-        for word, i in word_index.items():
+        fpVecFile.close()
+        embedding_matrix = np.zeros((len(self.word_index) + 1, vectorDim))
+        for word, i in self.word_index.items():
             embedding_vector = embeddings_index.get(word)
             if embedding_vector is not None:
             # words not found in embedding index will be all-zeros.
                 embedding_matrix[i] = embedding_vector        
-        
+        return embedding_matrix
+
+    def networConstuct(self, wordEmbeddingDim, wordEmbeddingMatrix = []):
+        sequencesInput = Input(shape=(wordEmbeddingDim)) 
+        if len(wordEmbeddingMatrix) > 10:
+            embeddingLayer = Embedding(len(self.word_index) + 1, wordEmbeddingDim, weights = [wordEmbeddingMatrix], trainable = False)
+        else:
+            embeddingLayer = Embedding(len(self.word_index) + 1, wordEmbeddingDim, activation = 'relu')
+
+
+
 if __name__ == '__main__':
     #if len(sys.argv) < 2:
     #    exit(-1)
     dataFileName = './dataset/ProsessedText.txt'
     processor = ZeroProDetection(dataFileName)
     processor.textPreprocess()
-    
-    
-        
