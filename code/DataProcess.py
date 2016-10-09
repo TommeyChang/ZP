@@ -39,19 +39,22 @@ class ZeroProDetection:
         textList = []
         rawLabelList = []
         fpDataFile = open(self.dataFileName)
+        totalLines = 0
         for line in fpDataFile:
             splitLine = line.split('\t')
             if len(splitLine[1][:-1]) > 0:                
                 textList.append(splitLine[0])
                 labels = map(int,splitLine[1][:-1].split(','))
                 rawLabelList.append(labels)
+                totalLines += 1
         fpDataFile.close()
+        self.logger.info('Finish fetching dataset, %d records.' % totalLines)
         
         # use Tokenizer to process the word
         tokenizer = Tokenizer(filters='')
         tokenizer.fit_on_texts(textList)
         self.word_index = tokenizer.word_index
-        #
+        self.logger.info('There are %d words in the corpus.' % len(self.word_index))
         rawSequences = tokenizer.texts_to_sequences(textList)
         sequences = pad_sequences(rawSequences, self.MAX_SEQUENCE_LENGTH)
         labelList = pad_sequences(rawLabelList, self.MAX_SEQUENCE_LENGTH)
@@ -68,9 +71,9 @@ class ZeroProDetection:
         nbTest = int(self.TESTPORTION * sequences.shape[0])
 
         self.trainData = sequences[ : -nbTest]
-        self.trainLabels = labelList[ : -nbTest]
+        self.trainLabels = np.array(labelList[ : -nbTest]).reshape(labelList[ : -nbTest].shape[0], 50, 1)
         self.testData = sequences[ -nbTest :]
-        self.testLabels = labelList[ -nbTest : ]       
+        self.testLabels = np.array(labelList[ -nbTest : ]).reshape(labelList[ -nbTest : ].shape[0], 50, 1)       
 
     def loadWordVecs(self, vectFile, vectorDim):
         # Most codes of this function are learning from Francois
@@ -94,7 +97,7 @@ class ZeroProDetection:
         # Set a empty model
         mainInput = Input(shape=(self.MAX_SEQUENCE_LENGTH,))
         embeddingOutput = Embedding(len(self.word_index) + 1, wordEmbeddingDim, weights = [wordEmbeddingMatrix], trainable = False)(mainInput)
-        bLSTMOutput = Bidirectional(LSTM(128, return_sequences = True))(embeddingOutput)
+        bLSTMOutput = Bidirectional(LSTM(256, return_sequences = True, consume_less = 'cpu'))(embeddingOutput)
         finalOutput = LSTM(1, activation = 'hard_sigmoid', return_sequences = True)(bLSTMOutput)
         model = Model(mainInput, finalOutput)
         model.compile(loss='categorical_crossentropy', optimizer='rmsprop', metrics=['acc'])
@@ -107,11 +110,10 @@ if __name__ == '__main__':
     #if len(sys.argv) < 2:
     #    exit(-1)
     dataFileName = './datasetsequence/ProsessedText.txt'
-    dataFileName = './dataset/ProsessedText.txt'
+    #dataFileName = './dataset/ProsessedText.txt'
     processor = ZeroProDetection(dataFileName)
     processor.textPreprocess()
-    print processor.testData.shape
-    #wordEmbeddingMatrix = processor.loadWordVecs('./datasetsequence/dataset.vec', 300)
-    #processorModel = processor.modelExternalEmbedding(300, wordEmbeddingMatrix)
-    #processor.modelTraining(processorModel, 100, 128)
+    wordEmbeddingMatrix = processor.loadWordVecs('./datasetsequence/dataset.vec', 300)
+    processorModel = processor.modelExternalEmbedding(300, wordEmbeddingMatrix)
+    processor.modelTraining(processorModel, 10, 128)
     
