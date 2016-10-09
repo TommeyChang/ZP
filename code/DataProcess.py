@@ -106,7 +106,7 @@ class ZeroProDetection:
 if __name__ == '__main__':
     #if len(sys.argv) < 2:
     #    exit(-1)
-    #dataFileName = './datasetsequence/ProsessedText.txt'
+    dataFileName = './datasetsequence/ProsessedText.txt'
     dataFileName = './dataset/ProsessedText.txt'
     processor = ZeroProDetection(dataFileName)
     processor.textPreprocess()
