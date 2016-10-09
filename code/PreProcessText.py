@@ -71,7 +71,6 @@ class FilePreprocess:
             fpPerFile.close()
             if lineCountTotal % 100 == 0:
                 self.logger.info("Finish processing %d lines, %d lines exist pro, %d times." % (lineCountTotal, lineCountExist, timeCountExist))
-        fpOutFile.write("The data set has %d lines, %d lines exist pro, %d times" % (lineCountTotal, lineCountExist, timeCountExist))
         fpOutFile.close()
         self.logger.info("Finish processing %d lines, %d lines exist pro, %d times." % (lineCountTotal, lineCountExist, timeCountExist))
         #fpHalfOutFile.close()
