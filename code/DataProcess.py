@@ -17,7 +17,7 @@ from keras.utils import np_utils
 
 class ZeroProDetection:
     TESTPORTION = 0.01
-    MAX_SEQUENCE_LENGTH = 30
+    MAX_SEQUENCE_LENGTH = 35
     PADDING_FLAG = 1
     def __init__(self, dataFileName):
         # set the logger format
@@ -58,7 +58,7 @@ class ZeroProDetection:
         self.word_index = tokenizer.word_index
         self.logger.info('There are %d words in the corpus.' % len(self.word_index))
         rawSequences = tokenizer.texts_to_sequences(textList)
-        
+               
         sequences = pad_sequences(rawSequences, self.MAX_SEQUENCE_LENGTH, padding = 'post')
         labelList = pad_sequences(rawLabelList, self.MAX_SEQUENCE_LENGTH, padding = 'post')
         
@@ -77,11 +77,9 @@ class ZeroProDetection:
         self.trainData = sequences[ : -nbTest]
         self.testData = sequences[ -nbTest :]
         
-        #Tensorflow
-        self.trainLabels = np.array(labelList[ : -nbTest]).reshape(labelList[ : -nbTest].shape[0], self.MAX_SEQUENCE_LENGTH, 1)            
-        self.testLabels = np.array(labelList[ -nbTest : ]).reshape(labelList[ -nbTest : ].shape[0], self.MAX_SEQUENCE_LENGTH, 1)
         
-            
+        self.trainLabels = np.array(labelList[ : -nbTest]).reshape(labelList[ : -nbTest].shape[0], self.MAX_SEQUENCE_LENGTH, 1)            
+        self.testLabels = np.array(labelList[ -nbTest : ]).reshape(labelList[ -nbTest : ].shape[0], self.MAX_SEQUENCE_LENGTH, 1)       
 
     def loadWordVecs(self, vectFile, vectorDim):
         # Most codes of this function are learning from Francois
@@ -109,21 +107,43 @@ class ZeroProDetection:
         mainInput = Input(shape=(self.MAX_SEQUENCE_LENGTH,))
         embeddingOutput = Embedding(len(self.word_index) + 1, wordEmbeddingDim, weights = [wordEmbeddingMatrix], trainable = False, mask_zero = True)(mainInput)
         forwardLSTM = LSTM(dimLSTM, return_sequences = True, consume_less = 'cpu', activation = 'tanh')(embeddingOutput)
-        backwardLSTM = LSTM(dimLSTM, return_sequences = True, consume_less = 'cpu', activation = 'tanh')(embeddingOutput)
+        backwardLSTM = LSTM(dimLSTM, return_sequences = True, consume_less = 'cpu', activation = 'tanh', go_backwards = True)(embeddingOutput)
         mergeOutput = merge([forwardLSTM, backwardLSTM], mode = 'concat', concat_axis = -1)
         dpOutput = Dropout(0.05)(mergeOutput)
         denseOutput = TimeDistributed( Dense( dimDense, activation = 'tanh'))(dpOutput)
         finalOutput = TimeDistributed( Dense( 1, activation = 'sigmoid'))(denseOutput)
         model = Model(mainInput, finalOutput)
-        model.compile( loss='binary_crossentropy', optimizer='rmsprop', metrics=['acc'])
+        model.compile( loss='binary_crossentropy', optimizer = 'rmsprop', metrics = ['acc'])
         self.logger.info('Finish constructing the model')
         return model
     
+    def modelInternalEmbedding(self, wordEmbeddingDim, wordEmbeddingMatrix, dimLSTM, dimDense):
+            self.logger.info('Start to construct the model...')
+            # Set a empty model
+            mainInput = Input(shape=(self.MAX_SEQUENCE_LENGTH,))
+            embeddingOutput = Embedding(len(self.word_index) + 1, wordEmbeddingDim, mask_zero = True)(mainInput)
+            forwardLSTM = LSTM(dimLSTM, return_sequences = True, consume_less = 'cpu', activation = 'tanh')(embeddingOutput)
+            backwardLSTM = LSTM(dimLSTM, return_sequences = True, consume_less = 'cpu', activation = 'tanh')(embeddingOutput)
+            mergeOutput = merge([forwardLSTM, backwardLSTM], mode = 'concat', concat_axis = -1)
+            dpOutput = Dropout(0.05)(mergeOutput)
+            denseOutput = TimeDistributed( Dense( dimDense, activation = 'tanh'))(dpOutput)
+            finalOutput = TimeDistributed( Dense( 1, activation = 'hard_sigmoid'))(denseOutput)
+            model = Model( mainInput, finalOutput )
+            model.compile( loss = 'binary_crossentropy', optimizer = 'rmsprop', metrics = ['acc'])
+            self.logger.info('Finish constructing the model.')
+            return model    
+    
     def modelTraining(self, model, epoches, batchSize, valSplit, modelConfigSavePath = './'):
-        self.logger.info('Start training...')      
+        self.logger.info('Start training the model...')      
         model.fit(self.trainData, self.trainLabels, nb_epoch = epoches, batch_size = batchSize, validation_split = valSplit) 
+        #save the model
         fpModelConfig = open(modelConfigSavePath + 'model.json', 'w')
-        fpModelConfig.write(model.to_json())       
+        fpModelConfig.write(model.to_json())
+        fpModelConfig.close
+        #save the weights
+        model.save_weights('./model.h5')
+        self.logger.info('Finish training the model.')
+        return model
 
 if __name__ == '__main__':
     #if len(sys.argv) < 2:
@@ -133,6 +153,6 @@ if __name__ == '__main__':
     processor = ZeroProDetection(dataFileName)
     processor.textPreprocess()
     wordEmbeddingMatrix = processor.loadWordVecs('./datasetclean/dataset.vec', 300)
-    processorModel = processor.modelExternalEmbedding(300, wordEmbeddingMatrix, 256, 512)
-    processor.modelTraining(processorModel, 10, 32, 0.05)
-    
+    untrainModel = processor.modelExternalEmbedding(300, wordEmbeddingMatrix, 512, 1024)
+    trainedModel = processor.modelTraining(untrainModel, 5, 32, 0.05)
+    print trainedModel.evaluate(processor.testData, processor.testLabels, batch_size = 32)
