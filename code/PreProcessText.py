@@ -26,10 +26,11 @@ class FilePreprocess:
         self.logger.info("Finish getting the coref file names")
     
     def sortAndMerge(self, cleanRate = 6):
-        fpOutFile = open(self.datasetPath + '/ProsessedText.txt','w')
+        fpOutFile = open(self.datasetPath + '/ProcessedText.txt','w')
         #fpHalfOutFile = open(self.datasetPath + '/HalfProcessText.txt','w')
-        delPatter = re.compile(r'(<(.*?)>|\*OP\*\s)|\*T.*?\s')
-        annotePatter = re.compile(r'\*[Pp][Rr][Oo]\*\s')
+        delPatter = re.compile(r'<(.*?)>|(\*OP\*\s|(\*T\*(-(\d)*)*\s|(\*RNR\*(-(\d)*)*\s|\*-1)))')
+        blankPatter = re.compile(r'\s\s')
+        annotePatter = re.compile(r'\*[Pp][Rr][Oo]\*(\s)')
         self.logger.info("Start processing the coref files...")
         lineCountTotal = 0
         lineCountExist = 0
@@ -38,7 +39,8 @@ class FilePreprocess:
         for perCoreFileName in self.corefFiles:            
             fpPerFile = open(perCoreFileName)
             for line in fpPerFile:
-                delLine = delPatter.sub('', line)
+                delTagLine = delPatter.sub('', line)
+                delLine = blankPatter.sub(r' ', delTagLine)
                 if len(delLine) > 1:                         
                     lineCountTotal += 1
                     proMatches = annotePatter.finditer(delLine)    #generate a iterate of the *pro* matches                   
