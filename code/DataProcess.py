@@ -5,9 +5,9 @@ import numpy as np
 import scipy as sy
 import os, sys, logging
 #import keras models
-from keras.models import Sequential, Model
+from keras.models import Sequential, Model, model_from_json
 
-from keras.layers import Embedding, Input, Bidirectional
+from keras.layers import Embedding, Input, merge, TimeDistributed
 from keras.layers.core import Dense, Dropout, Activation
 from keras.layers.recurrent import LSTM
 
@@ -16,8 +16,9 @@ from keras.preprocessing.sequence import pad_sequences
 from keras.utils import np_utils
 
 class ZeroProDetection:
-    TESTPORTION = 0.05
-    MAX_SEQUENCE_LENGTH = 50
+    TESTPORTION = 0.01
+    MAX_SEQUENCE_LENGTH = 30
+    PADDING_FLAG = 1
     def __init__(self, dataFileName):
         # set the logger format
         logFormat = logging.Formatter("%(asctime)s :%(name)s :%(levelname)s :%(message)s" )
@@ -44,11 +45,12 @@ class ZeroProDetection:
             splitLine = line.split('\t')
             if len(splitLine[1][:-1]) > 0:                
                 textList.append(splitLine[0])
-                labels = map(int,splitLine[1][:-1].split(','))
+                labels = map(int,splitLine[1][:-1].split(','))                                   
                 rawLabelList.append(labels)
                 totalLines += 1
         fpDataFile.close()
         self.logger.info('Finish fetching dataset, %d records.' % totalLines)
+        
         
         # use Tokenizer to process the word
         tokenizer = Tokenizer(filters='')
@@ -56,8 +58,10 @@ class ZeroProDetection:
         self.word_index = tokenizer.word_index
         self.logger.info('There are %d words in the corpus.' % len(self.word_index))
         rawSequences = tokenizer.texts_to_sequences(textList)
-        sequences = pad_sequences(rawSequences, self.MAX_SEQUENCE_LENGTH)
-        labelList = pad_sequences(rawLabelList, self.MAX_SEQUENCE_LENGTH)
+        
+        sequences = pad_sequences(rawSequences, self.MAX_SEQUENCE_LENGTH, padding = 'post')
+        labelList = pad_sequences(rawLabelList, self.MAX_SEQUENCE_LENGTH, padding = 'post')
+        
        
         # ramdon the sentence matrix
         
@@ -69,14 +73,19 @@ class ZeroProDetection:
         # split the data into training set and test set
         
         nbTest = int(self.TESTPORTION * sequences.shape[0])
-
+        
         self.trainData = sequences[ : -nbTest]
-        self.trainLabels = np.array(labelList[ : -nbTest]).reshape(labelList[ : -nbTest].shape[0], 50, 1)
         self.testData = sequences[ -nbTest :]
-        self.testLabels = np.array(labelList[ -nbTest : ]).reshape(labelList[ -nbTest : ].shape[0], 50, 1)       
+        
+        #Tensorflow
+        self.trainLabels = np.array(labelList[ : -nbTest]).reshape(labelList[ : -nbTest].shape[0], self.MAX_SEQUENCE_LENGTH, 1)            
+        self.testLabels = np.array(labelList[ -nbTest : ]).reshape(labelList[ -nbTest : ].shape[0], self.MAX_SEQUENCE_LENGTH, 1)
+        
+            
 
     def loadWordVecs(self, vectFile, vectorDim):
         # Most codes of this function are learning from Francois
+        self.logger.info('Sarting to load the word vectors...')
         embeddings_index = {}
         fpVecFile = open(vectFile)
         for line in fpVecFile:
@@ -91,29 +100,39 @@ class ZeroProDetection:
             if embedding_vector is not None:
             # words not found in embedding index will be all-zeros.
                 embedding_matrix[i] = embedding_vector
+        self.logger.info('Finish loading the word vectors.')
         return embedding_matrix
 
-    def modelExternalEmbedding(self, wordEmbeddingDim, wordEmbeddingMatrix):
+    def modelExternalEmbedding(self, wordEmbeddingDim, wordEmbeddingMatrix, dimLSTM, dimDense):
+        self.logger.info('Start to construct the model...')
         # Set a empty model
         mainInput = Input(shape=(self.MAX_SEQUENCE_LENGTH,))
-        embeddingOutput = Embedding(len(self.word_index) + 1, wordEmbeddingDim, weights = [wordEmbeddingMatrix], trainable = False)(mainInput)
-        bLSTMOutput = Bidirectional(LSTM(256, return_sequences = True, consume_less = 'cpu'))(embeddingOutput)
-        finalOutput = LSTM(1, activation = 'hard_sigmoid', return_sequences = True)(bLSTMOutput)
+        embeddingOutput = Embedding(len(self.word_index) + 1, wordEmbeddingDim, weights = [wordEmbeddingMatrix], trainable = False, mask_zero = True)(mainInput)
+        forwardLSTM = LSTM(dimLSTM, return_sequences = True, consume_less = 'cpu', activation = 'tanh')(embeddingOutput)
+        backwardLSTM = LSTM(dimLSTM, return_sequences = True, consume_less = 'cpu', activation = 'tanh')(embeddingOutput)
+        mergeOutput = merge([forwardLSTM, backwardLSTM], mode = 'concat', concat_axis = -1)
+        dpOutput = Dropout(0.05)(mergeOutput)
+        denseOutput = TimeDistributed( Dense( dimDense, activation = 'tanh'))(dpOutput)
+        finalOutput = TimeDistributed( Dense( 1, activation = 'sigmoid'))(denseOutput)
         model = Model(mainInput, finalOutput)
-        model.compile(loss='categorical_crossentropy', optimizer='rmsprop', metrics=['acc'])
+        model.compile( loss='binary_crossentropy', optimizer='rmsprop', metrics=['acc'])
+        self.logger.info('Finish constructing the model')
         return model
     
-    def modelTraining(self, model, epoches, batchSize):
-        model.fit(self.trainData, self.trainLabels, validation_data = (self.testData, self.testLabels), nb_epoch = epoches)       
+    def modelTraining(self, model, epoches, batchSize, valSplit, modelConfigSavePath = './'):
+        self.logger.info('Start training...')      
+        model.fit(self.trainData, self.trainLabels, nb_epoch = epoches, batch_size = batchSize, validation_split = valSplit) 
+        fpModelConfig = open(modelConfigSavePath + 'model.json', 'w')
+        fpModelConfig.write(model.to_json())       
 
 if __name__ == '__main__':
     #if len(sys.argv) < 2:
     #    exit(-1)
-    dataFileName = './datasetsequence/ProsessedText.txt'
+    dataFileName = './datasetclean/ProsessedText.txt'
     #dataFileName = './dataset/ProsessedText.txt'
     processor = ZeroProDetection(dataFileName)
     processor.textPreprocess()
-    wordEmbeddingMatrix = processor.loadWordVecs('./datasetsequence/dataset.vec', 300)
-    processorModel = processor.modelExternalEmbedding(300, wordEmbeddingMatrix)
-    processor.modelTraining(processorModel, 10, 128)
+    wordEmbeddingMatrix = processor.loadWordVecs('./datasetclean/dataset.vec', 300)
+    processorModel = processor.modelExternalEmbedding(300, wordEmbeddingMatrix, 256, 512)
+    processor.modelTraining(processorModel, 10, 32, 0.05)
     
