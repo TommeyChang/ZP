@@ -2,7 +2,7 @@
 #coding=utf-8
 
 import os, sys, logging
-import re
+import re, random
 
 
 class FilePreprocess:
@@ -25,7 +25,7 @@ class FilePreprocess:
                     self.corefFiles.append(os.path.join(fpath, perFile))
         self.logger.info("Finish getting the coref file names")
     
-    def sortAndMerge(self):
+    def sortAndMerge(self, cleanRate = 6):
         fpOutFile = open(self.datasetPath + '/ProsessedText.txt','w')
         #fpHalfOutFile = open(self.datasetPath + '/HalfProcessText.txt','w')
         delPatter = re.compile(r'(<(.*?)>|\*OP\*\s)|\*T.*?\s')
@@ -56,17 +56,17 @@ class FilePreprocess:
                         timeCountExist += 1
                         preProTail = proSpan[1] 
                     else:
-                        tokenCount = []
-                        for letter in delLine[ preProTail : ]:                            
-                            if letter == ' ':
-                                tokenCount.append('0')                                
-                        tokenCounts += tokenCount                        
-                    # write the middle result    
-                    #fpHalfOutFile.write(delLine[:-1] + '\n')                    
-                    # del all *pro* from the text, write it to the result file
-                    result = annotePatter.sub('', delLine)                    
-                    fpOutFile.write(result[:-1] + '\t' + ','.join(map(str,tokenCounts)) + '\n')
-                    lineCountExist += 1
+                        if len(tokenCounts) > 0 or random.randint(0,9) > cleanRate:
+                            # Only preserve these lines that contain pro, and random select some no pro lines
+                            tokenCount = []
+                            for letter in delLine[ preProTail : ]:                            
+                                if letter == ' ':
+                                    tokenCount.append('0')                                
+                            tokenCounts += tokenCount                        
+                    
+                            result = annotePatter.sub('', delLine)                    
+                            fpOutFile.write(result[:-1] + '\t' + ','.join(map(str,tokenCounts)) + '\n')
+                            lineCountExist += 1
                     
             fpPerFile.close()
             if lineCountTotal % 100 == 0:
@@ -78,9 +78,13 @@ class FilePreprocess:
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        exit(-1)
+    parameterNumber = len(sys.argv)
+    if parameterNumber < 2:
+        exit(-1)    
     datasetPath = sys.argv[1]
     processer = FilePreprocess(datasetPath)
     processer.getAllCorefFiles()
-    processer.sortAndMerge()
+    if parameterNumber < 3:
+        processer.sortAndMerge()
+    else:
+        processer.sortAndMerge(sys.argv[2])
