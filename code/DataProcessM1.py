@@ -80,7 +80,7 @@ class ZeroProDetection:
         shuffleText = []
         
         for eachPos in indices:
-            shuffleText.append(textList[indices])
+            shuffleText.append(textList[eachPos])
         # split dataset into trainning set and test set    
         nbTest = int(self.TESTPORTION * sequences.shape[0])
         # trainning set        
