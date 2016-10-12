@@ -20,7 +20,7 @@ from keras.utils.visualize_util import plot
 
 
 class ZeroProDetection:
-    TESTPORTION = 0.0004
+    TESTPORTION = 0.001
     MAX_SEQUENCE_LENGTH = 35
     PADDING_FLAG = 1
     def __init__(self, dataFileName):
@@ -168,14 +168,18 @@ if __name__ == '__main__':
     trainedModel = processor.modelTraining(untrainModel, epochNum, batchSize, valSplit) 
     
     predictLabels = trainedModel.predict(processor.testData, batch_size = 32)
+    
+    fpResult = open('result.txt', 'w')
+    
     for predictLabel, realLabel in zip(predictLabels, processor.testLabels):
-        differeLabel = np.zeros(predictLabel.shape)
-        differePos = ( predictLabel != realLabel )
-        differeLabel[differePos] = 1
-        
-        print realLabel.reshape(1,processor.MAX_SEQUENCE_LENGTH)
-        print predictLabel.reshape(1,processor.MAX_SEQUENCE_LENGTH)
-        print differeLabel.reshape(1,processor.MAX_SEQUENCE_LENGTH)
+                
+        for eachRealLabel in realLabel.reshape(1,processor.MAX_SEQUENCE_LENGTH):
+            fpResult.write(str(eachRealLabel) + '\t')
+        fpResult.write('\n')
+        for eachPreLabel in predictLabel.reshape(1,processor.MAX_SEQUENCE_LENGTH):
+            fpResult.write(str(eachPreLabel) + '\t')
+        fpResult.write('\n')
+    fpResult.close()
    
    
    
